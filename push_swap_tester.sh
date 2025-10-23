@@ -1,133 +1,108 @@
 #!/bin/bash
 
-PUSH_SWAP=./push_swap
-CHECKER=./checker_linux
+# Color definitions
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
 
-# Colors
-GREEN="\033[0;32m"
-RED="\033[0;31m"
-YELLOW="\033[0;33m"
-NC="\033[0m"
-
-echo "=== Error management tests ==="
-
+# General-purpose test function (shows command and output)
 run_test() {
     local desc="$1"
     local cmd="$2"
     local expect="$3"
 
+    echo -e "\n${CYAN}> Running test: ${YELLOW}$desc${NC}"
+    echo "  Command: $cmd"
+
     output=$(eval "$cmd" 2>&1)
-    if [[ "$output" == "$expect" ]]; then
-        echo -e "TEST: $desc ... ${GREEN}PASS${NC}"
+    if [[ -z "$output" ]]; then
+        echo "  Output: (empty)"
     else
-        echo -e "TEST: $desc ... ${RED}FAIL${NC}"
-        echo "    -> got: '$output'"
+        echo "  Output: '$output'"
+    fi
+
+    if [[ "$output" == "$expect" ]]; then
+        echo -e "  Result: ${GREEN}PASS${NC}"
+    else
+        echo -e "  Result: ${RED}FAIL${NC}"
+        echo "  Expected: '$expect'"
     fi
 }
 
-# Error handling tests
-run_test "non-numeric parameter" "$PUSH_SWAP 2 4 1 d 7" "Error"
-run_test "duplicate number" "$PUSH_SWAP 2 4 1 4 7" "Error"
-run_test "number > MAXINT (2147483648)" "$PUSH_SWAP 2147483648" "Error"
+# Specialized test for checker/sorting scenarios
+run_checker_test() {
+    local desc="$1"
+    local arg="$2"
+    local expected_checker="$3"
+    local max_instructions="$4"
 
-output=$($PUSH_SWAP)
-if [[ -z "$output" ]]; then
-    echo -e "TEST: no parameters (expect no output) ... ${GREEN}PASS${NC}"
-else
-    echo -e "TEST: no parameters (expect no output) ... ${RED}FAIL${NC}"
-fi
+    echo -e "\n${CYAN}> Running test: ${YELLOW}$desc${NC}"
+    echo "  Input: $arg"
 
-echo
-echo "=== Identity tests (should produce no instructions) ==="
-for args in "42" "0 1 2 3" "0 1 2 3 4 5 6 7 8 9"; do
-    output=$($PUSH_SWAP $args)
-    if [[ -z "$output" ]]; then
-        echo -e "TEST: $args ... ${GREEN}PASS${NC}"
+    instructions=$(./push_swap $arg)
+    checker_output=$(echo "$instructions" | ./checker_linux $arg)
+
+    if [[ -z "$instructions" ]]; then
+        instr_count=0
     else
-        echo -e "TEST: $args ... ${RED}FAIL${NC}"
+        instr_count=$(echo "$instructions" | wc -l)
+    fi
+
+    echo "  push_swap output:"
+    if [[ -z "$instructions" ]]; then
+        echo "    (no instructions)"
+    else
+        echo "$instructions" | sed 's/^/    /'
+    fi
+    echo "  checker output: $checker_output"
+    echo -e "  instructions: ${GREEN}$instr_count${NC}"
+
+    if [[ "$checker_output" == "$expected_checker" && "$instr_count" -le "$max_instructions" ]]; then
+        echo -e "  Result: ${GREEN}PASS${NC}"
+    else
+        echo -e "  Result: ${RED}FAIL${NC}"
+    fi
+}
+
+
+echo "=== Error management tests ==="
+run_test "non-numeric parameter" "./push_swap 2 4 1 d 7" "Error"
+run_test "duplicate number" "./push_swap 2 4 1 4 7" "Error"
+run_test "number > MAXINT (2147483648)" "./push_swap 2147483648" "Error"
+run_test "no parameters (expect no output)" "./push_swap" ""
+
+echo -e "\n=== Identity tests ==="
+run_test "single '42'" "./push_swap 42" ""
+run_test "already sorted '0 1 2 3'" "./push_swap 0 1 2 3" ""
+run_test "already sorted 10 numbers" "./push_swap 0 1 2 3 4 5 6 7 8 9" ""
+
+echo -e "\n=== Simple version tests ==="
+run_checker_test "small sort (2 1 0)" "2 1 0" "OK" 3
+run_checker_test "small sort (1 5 2 4 3)" "1 5 2 4 3" "OK" 8
+
+echo -e "\n=== Randomized tests ==="
+for n in 5 100 500; do
+    echo -e "\n${CYAN}> Running random test for $n numbers...${NC}"
+    ARG=$(shuf -i 0-$((n - 1)) -n $n | tr '\n' ' ')
+    instructions=$(./push_swap $ARG)
+    checker_output=$(echo "$instructions" | ./checker_linux $ARG)
+    instr_count=$(echo "$instructions" | wc -l)
+    if [[ "$n" -eq 5 ]]; then
+        echo "  args: $ARG"
+        echo "  push_swap output:"
+        if [[ -z "$instructions" ]]; then
+            echo "    (no instructions)"
+        else
+            echo "$instructions" | sed 's/^/    /'
+        fi
+    fi
+    echo "  checker output: $checker_output"
+    echo -e "  instructions: ${GREEN}$instr_count${NC}"
+    if [[ "$checker_output" == "OK" ]]; then
+        echo -e "  Result: ${GREEN}PASS${NC}"
+    else
+        echo -e "  Result: ${RED}FAIL${NC}"
     fi
 done
-
-echo
-echo "=== Simple version tests ==="
-ARG="2 1 0"
-instructions=$($PUSH_SWAP $ARG | tee /tmp/instructions.txt)
-result=$($CHECKER $ARG < /tmp/instructions.txt)
-count=$(wc -l < /tmp/instructions.txt)
-if [[ "$result" == "OK" && $count -ge 2 && $count -le 3 ]]; then
-    echo -e "Test ARG='$ARG' -> checker: $result, instructions: ${GREEN}$count${NC} ... ${GREEN}PASS${NC}"
-else
-    echo -e "Test ARG='$ARG' -> checker: $result, instructions: ${RED}$count${NC} ... ${RED}FAIL${NC}"
-fi
-
-echo
-echo "=== Another simple version ==="
-ARG="1 5 2 4 3"
-instructions=$($PUSH_SWAP $ARG | tee /tmp/instructions.txt)
-result=$($CHECKER $ARG < /tmp/instructions.txt)
-count=$(wc -l < /tmp/instructions.txt)
-if [[ "$result" == "OK" && $count -le 12 ]]; then
-    echo -e "Test ARG='$ARG' -> checker: $result, instructions: ${GREEN}$count${NC} ... ${GREEN}PASS${NC}"
-else
-    echo -e "Test ARG='$ARG' -> checker: $result, instructions: ${RED}$count${NC} ... ${RED}FAIL${NC}"
-fi
-
-echo "Running 5-random-values test (3 permutations)..."
-for i in {1..3}; do
-    ARG=$(shuf -i 0-99 -n 5 | tr '\n' ' ')
-    instructions=$($PUSH_SWAP $ARG | tee /tmp/instructions.txt)
-    result=$($CHECKER $ARG < /tmp/instructions.txt)
-    count=$(wc -l < /tmp/instructions.txt)
-    if [[ "$result" == "OK" && $count -le 12 ]]; then
-        echo -e "  $i) ARG='$ARG' -> checker: $result, instructions: ${GREEN}$count${NC} ... ${GREEN}PASS${NC}"
-    else
-        echo -e "  $i) ARG='$ARG' -> checker: $result, instructions: ${RED}$count${NC} ... ${RED}FAIL${NC}"
-        echo "    -> checker output: $result"
-        echo "    -> instructions: $count"
-        echo "    -> instructions file contents:"
-        cat /tmp/instructions.txt
-    fi
-done
-
-echo
-echo "=== Middle version (100 random values) ==="
-ARG=$(shuf -i 0-999 -n 100 | tr '\n' ' ')
-instructions=$($PUSH_SWAP $ARG | tee /tmp/instructions.txt)
-result=$($CHECKER $ARG < /tmp/instructions.txt)
-count=$(wc -l < /tmp/instructions.txt)
-if [[ "$result" == "OK" ]]; then
-    echo -e "ARG=100-random -> checker: $result, instructions: ${GREEN}$count${NC}"
-    if   [[ $count -lt 700 ]];  then echo -e "Result: ${GREEN}5${NC}"
-    elif [[ $count -lt 900 ]];  then echo -e "Result: ${GREEN}4${NC}"
-    elif [[ $count -lt 1100 ]]; then echo -e "Result: ${GREEN}3${NC}"
-    elif [[ $count -lt 1300 ]]; then echo -e "Result: ${GREEN}2${NC}"
-    elif [[ $count -lt 1500 ]]; then echo -e "Result: ${GREEN}1${NC}"
-    else echo -e "Result: ${RED}0${NC}"
-    fi
-else
-    echo -e "ARG=100-random -> checker: ${RED}$result${NC}, instructions: ${RED}$count${NC}"
-    echo -e "Result: ${RED}FAIL (checker did not return OK)${NC}"
-fi
-
-echo
-echo "=== Advanced version (500 random values) ==="
-ARG=$(shuf -i 0-9999 -n 500 | tr '\n' ' ')
-instructions=$($PUSH_SWAP $ARG | tee /tmp/instructions.txt)
-result=$($CHECKER $ARG < /tmp/instructions.txt)
-count=$(wc -l < /tmp/instructions.txt)
-if [[ "$result" == "OK" ]]; then
-    echo -e "ARG=500-random -> checker: $result, instructions: ${GREEN}$count${NC}"
-    if   [[ $count -lt 5500 ]];  then echo -e "Result: ${GREEN}5${NC}"
-    elif [[ $count -lt 7000 ]];  then echo -e "Result: ${GREEN}4${NC}"
-    elif [[ $count -lt 8500 ]];  then echo -e "Result: ${GREEN}3${NC}"
-    elif [[ $count -lt 10000 ]]; then echo -e "Result: ${GREEN}2${NC}"
-    elif [[ $count -lt 11500 ]]; then echo -e "Result: ${GREEN}1${NC}"
-    else echo -e "Result: ${RED}0${NC}"
-    fi
-else
-    echo -e "ARG=500-random -> checker: ${RED}$result${NC}, instructions: ${RED}$count${NC}"
-    echo -e "Result: ${RED}FAIL (checker did not return OK)${NC}"
-fi
-
-echo
-echo "=== Done ==="
