@@ -135,17 +135,16 @@ run_checker_test "small sort (1 5 2 4 3)" "1 5 2 4 3" "OK" 8
 echo -e "\n=== Randomized tests (5, 100, 500 numbers) ==="
 
 for n in 5 5 5 100 500; do
-    echo -e "\n${CYAN}> Running *kinda* random test with $n numbers${NC}"
+    echo -e "\n${CYAN}> Running random test with $n numbers (biased toward -1000→1000)${NC}"
     ARG=$(generate_random_ints $n)
-if [[ $n -eq 5 ]]; then
-    echo "  Input sample: $(echo "$ARG" | cut -d' ' -f1-5)"
-else
-    echo "  Input sample: $(echo "$ARG" | cut -d' ' -f1-10) ..."
-fi
-instructions=$(eval "./push_swap $ARG")
-checker_output=$(echo "$instructions" | eval "./checker_linux $ARG")
-instr_count=$(echo "$instructions" | wc -l)
-
+    if [[ $n -eq 5 ]]; then
+        echo "  Input sample: $(echo "$ARG" | awk '{print $1, $2, $3, $4, $5 ""}')"
+    else
+        echo "  Input sample: $(echo "$ARG" | awk '{print $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, ...""}')"
+    fi
+    instructions=$(eval "./push_swap $ARG")
+    checker_output=$(echo "$instructions" | eval "./checker_linux $ARG")
+    instr_count=$(echo "$instructions" | wc -l)
 
     if [[ $n -eq 5 ]]; then
         echo "  push_swap output:"
@@ -159,6 +158,9 @@ instr_count=$(echo "$instructions" | wc -l)
     if [[ $n -eq 100 || $n -eq 500 ]]; then
         score=$(get_score $n $instr_count)
         echo -e "  score: ${MAGENTA}$score${NC}"
+
+        # Append random input to logs.txt
+        echo "[${n}] $ARG" >> logs.txt
     fi
 
     if [[ "$checker_output" == "OK" ]]; then
@@ -167,4 +169,6 @@ instr_count=$(echo "$instructions" | wc -l)
         echo -e "  Result: ${RED}FAIL${NC}"
     fi
 done
+
 echo -e "\n=== Testing complete ==="
+echo -e "${YELLOW}Logs saved to logs.txt for 100 and 500 input cases.${NC}"
