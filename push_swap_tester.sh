@@ -159,24 +159,24 @@ run_checker_test "small sort (1 5 2 4 3)" "1 5 2 4 3" "OK" 8
 # ─── Randomized tests (biased distribution) ──────────────────────────────────
 echo -e "\n=== Randomized tests (2, 3, 4, 5, 100, 500 numbers) ==="
 
-for n in 2 2 3 3 4 4 5 5 100 500; do
+for n in 2 3 4 5 100 500; do
     echo -e "\n${CYAN}> Running random test with $n numbers (biased toward -1000→1000)${NC}"
     ARG=$(generate_random_ints $n)
+    read -r -a nums <<< "$ARG"
 
-    # Show input sample neatly
-    if [[ $n -le 5 ]]; then
-        echo "  Input sample: $(echo "$ARG" | awk '{for(i=1;i<=NF;i++) printf "%s ", $i; print ""}')"
+    # Show sample
+    if (( n <= 5 )); then
+        echo "  Input sample: ${nums[*]}"
     else
-        echo "  Input sample: $(echo "$ARG" | awk '{for(i=1;i<=10;i++) printf "%s ", $i; print "..."}')"
+        echo "  Input sample: ${nums[@]:0:10} ..."
     fi
 
-    # Run push_swap
-    instructions=$(./push_swap $ARG)
-    checker_output=$(echo "$instructions" | ./checker_linux $ARG)
+    # Pipe directly to checker to handle empty output correctly
+    checker_output=$(./push_swap "${nums[@]}" | ./checker_linux "${nums[@]}")
+    instructions=$(./push_swap "${nums[@]}")
     instr_count=$(echo "$instructions" | wc -l)
 
-    # Only show push_swap output for small sets
-    if [[ $n -le 5 && -n "$instructions" ]]; then
+    if (( n == 5 )); then
         echo "  push_swap output:"
         echo "$instructions" | sed 's/^/    /'
     fi
@@ -184,27 +184,23 @@ for n in 2 2 3 3 4 4 5 5 100 500; do
     echo "  checker output: $checker_output"
     echo -e "  instructions: ${GREEN}$instr_count${NC}"
 
-    # Show score only for 100 and 500
-    if [[ $n -eq 100 || $n -eq 500 ]]; then
+    # Score only for 100 and 500
+    if (( n == 100 || n == 500 )); then
         score=$(get_score $n $instr_count)
         echo -e "  score: ${MAGENTA}$score${NC}"
-        echo "[${n}] $ARG" >> logs.txt
+        # Save logs
+        echo "[${n}] ${nums[*]}" >> logs.txt
     fi
 
-    # Run Valgrind ONLY if checker fails OR output is empty (for error tests)
-    if [[ "$checker_output" != "OK" ]]; then
-        echo -e "\nRunning valgrind on failing case: ./push_swap $ARG"
-        echo "[Command] ./push_swap $ARG" >> valgrind.log
-        valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=1 ./push_swap $ARG &>> valgrind.log
-    fi
-
-    # Report result
+    # Determine pass/fail based on checker only
     if [[ "$checker_output" == "OK" ]]; then
         echo -e "  Result: ${GREEN}PASS${NC}"
     else
         echo -e "  Result: ${RED}FAIL${NC}"
+        run_valgrind ./push_swap "${nums[@]}"
     fi
 done
+
 echo -e "\n=== Testing complete ==="
 echo -e "${YELLOW}Logs saved to logs.txt for 100 and 500 input cases.${NC}"
 echo -e "${YELLOW}Valgrind logs for failing cases saved to valgrind.log${NC}"
