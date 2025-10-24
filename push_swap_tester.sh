@@ -176,7 +176,7 @@ for n in 2 3 4 5 100 500; do
     instructions=$(./push_swap "${nums[@]}")
     instr_count=$(echo "$instructions" | wc -l)
 
-    if (( n == 5 )); then
+    if (( n <= 5 )); then
         echo "  push_swap output:"
         echo "$instructions" | sed 's/^/    /'
     fi
