@@ -142,9 +142,10 @@ if [[ $n -eq 5 ]]; then
 else
     echo "  Input sample: $(echo "$ARG" | cut -d' ' -f1-10) ..."
 fi
-    instructions=$(./push_swap $ARG)
-    checker_output=$(echo "$instructions" | ./checker_linux $ARG)
-    instr_count=$(echo "$instructions" | wc -l)
+instructions=$(eval "./push_swap $ARG")
+checker_output=$(echo "$instructions" | eval "./checker_linux $ARG")
+instr_count=$(echo "$instructions" | wc -l)
+
 
     if [[ $n -eq 5 ]]; then
         echo "  push_swap output:"
