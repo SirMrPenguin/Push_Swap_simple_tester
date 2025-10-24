@@ -170,30 +170,38 @@ for n in 2 3 4 5 100 500; do
         echo "  Input sample: ${nums[@]:0:10} ..."
     fi
 
-    instructions=$(./push_swap "${nums[@]}")
-    checker_output=$(echo "$instructions" | ./checker_linux "${nums[@]}")
+    instructions=$(./push_swap $ARG)
+if [[ -z "$instructions" ]]; then
+    instr_count=0
+else
     instr_count=$(echo "$instructions" | wc -l)
+fi
 
-    if (( n == 5 )); then
-        echo "  push_swap output:"
-        echo "$instructions" | sed 's/^/    /'
-    fi
+# Run checker even if instructions are empty
+checker_output=$(echo "$instructions" | ./checker_linux $ARG)
 
-    echo "  checker output: $checker_output"
-    echo -e "  instructions: ${GREEN}$instr_count${NC}"
+# Show push_swap output only if it’s not empty
+if [[ -n "$instructions" ]]; then
+    echo "  push_swap output:"
+    echo "$instructions" | sed 's/^/    /'
+fi
 
-    # Score only for 100 and 500
-    if (( n == 100 || n == 500 )); then
-        score=$(get_score $n $instr_count)
-        echo -e "  score: ${MAGENTA}$score${NC}"
-        # Save logs
-        echo "[${n}] ${nums[*]}" >> logs.txt
-    fi
+echo "  checker output: $checker_output"
+echo -e "  instructions: ${GREEN}$instr_count${NC}"
 
-    # Run valgrind on any failing case or expected error
-    if [[ "$checker_output" != "OK" ]]; then
-        run_valgrind ./push_swap "${nums[@]}"
-    fi
+# Show score only for 100 and 500
+if [[ $n -eq 100 || $n -eq 500 ]]; then
+    score=$(get_score $n $instr_count)
+    echo -e "  score: ${MAGENTA}$score${NC}"
+fi
+
+# Only fail if checker_output is not OK
+if [[ "$checker_output" == "OK" ]]; then
+    echo -e "  Result: ${GREEN}PASS${NC}"
+else
+    echo -e "  Result: ${RED}FAIL${NC}"
+    run_valgrind ./push_swap $ARG
+fi
 done
 
 echo -e "\n=== Testing complete ==="
