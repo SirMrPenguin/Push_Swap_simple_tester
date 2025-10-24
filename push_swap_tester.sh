@@ -1,5 +1,6 @@
 #!/bin/bash
 > logs.txt
+
 # ─── Color definitions ────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -17,7 +18,7 @@ run_test() {
     echo -e "\n${CYAN}> Running test: ${YELLOW}$desc${NC}"
     echo "  Command: $cmd"
 
-    output=$(eval "$cmd" 2>&1)
+    output=$(eval "$cmd" 2>&1)    # eval is fine here because cmd is simple and provided by you
     if [[ -z "$output" ]]; then
         echo "  Output: (empty)"
     else
@@ -42,13 +43,17 @@ run_checker_test() {
     echo -e "\n${CYAN}> Running test: ${YELLOW}$desc${NC}"
     echo "  Input: $arg"
 
-    instructions=$(./push_swap $arg)
-    checker_output=$(echo "$instructions" | ./checker_linux $arg)
+    # split arg into array safely
+    read -r -a ARGS <<< "$arg"
+
+    # call push_swap and checker with array expansion (safe for negatives)
+    instructions=$(./push_swap "${ARGS[@]}")
+    checker_output=$(echo "$instructions" | ./checker_linux "${ARGS[@]}")
 
     if [[ -z "$instructions" ]]; then
         instr_count=0
     else
-        instr_count=$(echo "$instructions" | wc -l)
+        instr_count=$(echo "$instructions" | wc -l | tr -d ' ')
     fi
 
     echo "  push_swap output:"
@@ -82,6 +87,7 @@ generate_random_ints() {
             num=$(od -An -N4 -t d4 /dev/urandom | tr -d ' ')
         fi
 
+        # ensure it's within 32-bit signed range (od yields that anyway)
         if [ "$num" -ge -2147483648 ] && [ "$num" -le 2147483647 ]; then
             if [ -z "${seen[$num]}" ]; then
                 seen[$num]=1
@@ -90,7 +96,9 @@ generate_random_ints() {
         fi
     done
 
-    echo "${nums[@]}"
+    # print numbers space-separated
+    printf "%s " "${nums[@]}" | sed 's/ $//'
+    echo
 }
 
 # ─── Scoring thresholds based on 42 standards ────────────────────────────────
@@ -132,35 +140,49 @@ run_checker_test "small sort (2 1 0)" "2 1 0" "OK" 3
 run_checker_test "small sort (1 5 2 4 3)" "1 5 2 4 3" "OK" 8
 
 # ─── Randomized tests (biased distribution) ──────────────────────────────────
-echo -e "\n=== Randomized tests (5, 100, 500 numbers) ==="
+echo -e "\n=== Randomized tests (2, 3, 4, 5, 100, 500 numbers) ==="
 
-for n in 5 5 5 100 500; do
+# customize sequence of tests here
+for n in 2 2 3 3 4 4 5 5 100 500; do
     echo -e "\n${CYAN}> Running random test with $n numbers (biased toward -1000→1000)${NC}"
     ARG=$(generate_random_ints $n)
-    if [[ $n -eq 5 ]]; then
-        echo "  Input sample: $(echo "$ARG" | awk '{print $1, $2, $3, $4, $5 }')"
-    else
-        echo "  Input sample: $(echo "$ARG" | awk '{print $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, "..."}')"
-    fi
-    instructions=$(eval "./push_swap $ARG")
-    checker_output=$(echo "$instructions" | eval "./checker_linux $ARG")
-    instr_count=$(echo "$instructions" | wc -l)
+    # split ARG safely into array
+    read -r -a ARGS <<< "$ARG"
 
-    if [[ $n -eq 5 ]]; then
+    # build a nice sample string (first up to 10 items)
+    sample_count=${#ARGS[@]}
+    if (( sample_count <= 5 )); then
+        sample="${ARGS[*]}"
+    else
+        # first 10 then "..."
+        first10=( "${ARGS[@]:0:10}" )
+        sample="$(printf "%s " "${first10[@]}")..."
+    fi
+    echo "  Input sample: $sample"
+
+    # call programs with array expansion (safe for negative numbers)
+    instructions=$(./push_swap "${ARGS[@]}")
+    checker_output=$(echo "$instructions" | ./checker_linux "${ARGS[@]}")
+    instr_count=$(echo "$instructions" | wc -l | tr -d ' ')
+
+    if [[ $n -le 5 ]]; then
         echo "  push_swap output:"
-        echo "$instructions" | sed 's/^/    /'
+        if [[ -z "$instructions" ]]; then
+            echo "    (no instructions)"
+        else
+            echo "$instructions" | sed 's/^/    /'
+        fi
     fi
 
     echo "  checker output: $checker_output"
     echo -e "  instructions: ${GREEN}$instr_count${NC}"
 
-    # Show score only for 100 and 500
+    # Show score only for 100 and 500, and log those inputs
     if [[ $n -eq 100 || $n -eq 500 ]]; then
         score=$(get_score $n $instr_count)
         echo -e "  score: ${MAGENTA}$score${NC}"
-
-        # Append random input to logs.txt
-        echo "[${n}] $ARG" >> logs.txt
+        # append a single-line, copy-paste-able entry to logs.txt
+        echo "[${n}] ${ARGS[*]}" >> logs.txt
     fi
 
     if [[ "$checker_output" == "OK" ]]; then
