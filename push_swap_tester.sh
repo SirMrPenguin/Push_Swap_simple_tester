@@ -138,9 +138,9 @@ for n in 5 5 5 100 500; do
     echo -e "\n${CYAN}> Running random test with $n numbers (biased toward -1000→1000)${NC}"
     ARG=$(generate_random_ints $n)
     if [[ $n -eq 5 ]]; then
-        echo "  Input sample: $(echo "$ARG" | awk '{print $1, $2, $3, $4, $5 ""}')"
+        echo "  Input sample: $(echo "$ARG" | awk '{print $1, $2, $3, $4, $5 }')"
     else
-        echo "  Input sample: $(echo "$ARG" | awk '{print $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, ...""}')"
+        echo "  Input sample: $(echo "$ARG" | awk '{print $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, "..."}')"
     fi
     instructions=$(eval "./push_swap $ARG")
     checker_output=$(echo "$instructions" | eval "./checker_linux $ARG")
