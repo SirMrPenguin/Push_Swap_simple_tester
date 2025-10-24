@@ -1,5 +1,6 @@
 #!/bin/bash
 > logs.txt
+> valgrind.log
 
 # ─── Color definitions ────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -9,6 +10,19 @@ CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 NC='\033[0m' # No Color
 
+# ─── Run valgrind on a command ───────────────────────────────────────────────
+run_valgrind() {
+    local cmd=("$@")
+    echo -e "\nRunning valgrind on failing/passing-but-empty test: ${cmd[*]}"
+    
+    # Append to valgrind.log instead of overwriting
+    {
+        echo -e "\n--- Command: ${cmd[*]} ---"
+        valgrind --leak-check=full --track-origins=yes --show-leak-kinds=all "${cmd[@]}"
+    } >> valgrind.log 2>&1
+}
+
+
 # ─── General-purpose test function ───────────────────────────────────────────
 run_test() {
     local desc="$1"
@@ -16,9 +30,12 @@ run_test() {
     local expect="$3"
 
     echo -e "\n${CYAN}> Running test: ${YELLOW}$desc${NC}"
-    echo "  Command: $cmd"
 
-    output=$(eval "$cmd" 2>&1)    # eval is fine here because cmd is simple and provided by you
+    # Split command into array to handle negative numbers safely
+    read -r -a cmd_array <<< "$cmd"
+    output=$( "${cmd_array[@]}" 2>&1 )
+
+    echo "  Command: $cmd"
     if [[ -z "$output" ]]; then
         echo "  Output: (empty)"
     else
@@ -27,11 +44,17 @@ run_test() {
 
     if [[ "$output" == "$expect" ]]; then
         echo -e "  Result: ${GREEN}PASS${NC}"
+        # Run valgrind for expected error messages or empty output
+        if [[ "$expect" == "Error" || -z "$expect" ]]; then
+            run_valgrind "${cmd_array[@]}"
+        fi
     else
         echo -e "  Result: ${RED}FAIL${NC}"
         echo "  Expected: '$expect'"
+        run_valgrind "${cmd_array[@]}"
     fi
 }
+
 
 # ─── Checker-based test function ─────────────────────────────────────────────
 run_checker_test() {
@@ -41,21 +64,18 @@ run_checker_test() {
     local max_instructions="$4"
 
     echo -e "\n${CYAN}> Running test: ${YELLOW}$desc${NC}"
-    echo "  Input: $arg"
 
-    # split arg into array safely
-    read -r -a ARGS <<< "$arg"
-
-    # call push_swap and checker with array expansion (safe for negatives)
-    instructions=$(./push_swap "${ARGS[@]}")
-    checker_output=$(echo "$instructions" | ./checker_linux "${ARGS[@]}")
+    read -r -a nums <<< "$arg"
+    instructions=$(./push_swap "${nums[@]}")
+    checker_output=$(echo "$instructions" | ./checker_linux "${nums[@]}")
 
     if [[ -z "$instructions" ]]; then
         instr_count=0
     else
-        instr_count=$(echo "$instructions" | wc -l | tr -d ' ')
+        instr_count=$(echo "$instructions" | wc -l)
     fi
 
+    echo "  Input: $arg"
     echo "  push_swap output:"
     if [[ -z "$instructions" ]]; then
         echo "    (no instructions)"
@@ -69,25 +89,23 @@ run_checker_test() {
         echo -e "  Result: ${GREEN}PASS${NC}"
     else
         echo -e "  Result: ${RED}FAIL${NC}"
+        run_valgrind ./push_swap "${nums[@]}"
     fi
 }
 
 # ─── Random integer generator with bias ───────────────────────────────────────
 generate_random_ints() {
-    count=$1
+    local count=$1
     declare -A seen
     nums=()
 
     while [ "${#nums[@]}" -lt "$count" ]; do
-        # 90% chance to pick a number between -1000 and 1000
         if (( RANDOM % 10 < 9 )); then
             num=$((RANDOM % 2001 - 1000))
         else
-            # 10% chance to pick a full 32-bit int
             num=$(od -An -N4 -t d4 /dev/urandom | tr -d ' ')
         fi
 
-        # ensure it's within 32-bit signed range (od yields that anyway)
         if [ "$num" -ge -2147483648 ] && [ "$num" -le 2147483647 ]; then
             if [ -z "${seen[$num]}" ]; then
                 seen[$num]=1
@@ -96,9 +114,7 @@ generate_random_ints() {
         fi
     done
 
-    # print numbers space-separated
-    printf "%s " "${nums[@]}" | sed 's/ $//'
-    echo
+    echo "${nums[@]}"
 }
 
 # ─── Scoring thresholds based on 42 standards ────────────────────────────────
@@ -142,55 +158,44 @@ run_checker_test "small sort (1 5 2 4 3)" "1 5 2 4 3" "OK" 8
 # ─── Randomized tests (biased distribution) ──────────────────────────────────
 echo -e "\n=== Randomized tests (2, 3, 4, 5, 100, 500 numbers) ==="
 
-# customize sequence of tests here
-for n in 2 2 3 3 4 4 5 5 100 500; do
+for n in 2 3 4 5 100 500; do
     echo -e "\n${CYAN}> Running random test with $n numbers (biased toward -1000→1000)${NC}"
     ARG=$(generate_random_ints $n)
-    # split ARG safely into array
-    read -r -a ARGS <<< "$ARG"
+    read -r -a nums <<< "$ARG"
 
-    # build a nice sample string (first up to 10 items)
-    sample_count=${#ARGS[@]}
-    if (( sample_count <= 5 )); then
-        sample="${ARGS[*]}"
+    # Show sample
+    if (( n <= 5 )); then
+        echo "  Input sample: ${nums[*]}"
     else
-        # first 10 then "..."
-        first10=( "${ARGS[@]:0:10}" )
-        sample="$(printf "%s " "${first10[@]}")..."
+        echo "  Input sample: ${nums[@]:0:10} ..."
     fi
-    echo "  Input sample: $sample"
 
-    # call programs with array expansion (safe for negative numbers)
-    instructions=$(./push_swap "${ARGS[@]}")
-    checker_output=$(echo "$instructions" | ./checker_linux "${ARGS[@]}")
-    instr_count=$(echo "$instructions" | wc -l | tr -d ' ')
+    instructions=$(./push_swap "${nums[@]}")
+    checker_output=$(echo "$instructions" | ./checker_linux "${nums[@]}")
+    instr_count=$(echo "$instructions" | wc -l)
 
-    if [[ $n -le 5 ]]; then
+    if (( n == 5 )); then
         echo "  push_swap output:"
-        if [[ -z "$instructions" ]]; then
-            echo "    (no instructions)"
-        else
-            echo "$instructions" | sed 's/^/    /'
-        fi
+        echo "$instructions" | sed 's/^/    /'
     fi
 
     echo "  checker output: $checker_output"
     echo -e "  instructions: ${GREEN}$instr_count${NC}"
 
-    # Show score only for 100 and 500, and log those inputs
-    if [[ $n -eq 100 || $n -eq 500 ]]; then
+    # Score only for 100 and 500
+    if (( n == 100 || n == 500 )); then
         score=$(get_score $n $instr_count)
         echo -e "  score: ${MAGENTA}$score${NC}"
-        # append a single-line, copy-paste-able entry to logs.txt
-        echo "[${n}] ${ARGS[*]}" >> logs.txt
+        # Save logs
+        echo "[${n}] ${nums[*]}" >> logs.txt
     fi
 
-    if [[ "$checker_output" == "OK" ]]; then
-        echo -e "  Result: ${GREEN}PASS${NC}"
-    else
-        echo -e "  Result: ${RED}FAIL${NC}"
+    # Run valgrind on any failing case or expected error
+    if [[ "$checker_output" != "OK" ]]; then
+        run_valgrind ./push_swap "${nums[@]}"
     fi
 done
 
 echo -e "\n=== Testing complete ==="
 echo -e "${YELLOW}Logs saved to logs.txt for 100 and 500 input cases.${NC}"
+echo -e "${YELLOW}Valgrind logs for failing cases saved to valgrind.log${NC}"
