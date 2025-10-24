@@ -156,54 +156,55 @@ run_checker_test "small sort (2 1 0)" "2 1 0" "OK" 3
 run_checker_test "small sort (1 5 2 4 3)" "1 5 2 4 3" "OK" 8
 
 # ─── Randomized tests (biased distribution) ──────────────────────────────────
+# ─── Randomized tests (biased distribution) ──────────────────────────────────
 echo -e "\n=== Randomized tests (2, 3, 4, 5, 100, 500 numbers) ==="
 
-for n in 2 3 4 5 100 500; do
+for n in 2 2 3 3 4 4 5 5 100 500; do
     echo -e "\n${CYAN}> Running random test with $n numbers (biased toward -1000→1000)${NC}"
     ARG=$(generate_random_ints $n)
-    read -r -a nums <<< "$ARG"
 
-    # Show sample
-    if (( n <= 5 )); then
-        echo "  Input sample: ${nums[*]}"
+    # Show input sample neatly
+    if [[ $n -le 5 ]]; then
+        echo "  Input sample: $(echo "$ARG" | awk '{for(i=1;i<=NF;i++) printf "%s ", $i; print ""}')"
     else
-        echo "  Input sample: ${nums[@]:0:10} ..."
+        echo "  Input sample: $(echo "$ARG" | awk '{for(i=1;i<=10;i++) printf "%s ", $i; print "..."}')"
     fi
 
+    # Run push_swap
     instructions=$(./push_swap $ARG)
-if [[ -z "$instructions" ]]; then
-    instr_count=0
-else
+    checker_output=$(echo "$instructions" | ./checker_linux $ARG)
     instr_count=$(echo "$instructions" | wc -l)
-fi
 
-# Run checker even if instructions are empty
-checker_output=$(echo "$instructions" | ./checker_linux $ARG)
+    # Only show push_swap output for small sets
+    if [[ $n -le 5 && -n "$instructions" ]]; then
+        echo "  push_swap output:"
+        echo "$instructions" | sed 's/^/    /'
+    fi
 
-# Show push_swap output only if it’s not empty
-if [[ -n "$instructions" ]]; then
-    echo "  push_swap output:"
-    echo "$instructions" | sed 's/^/    /'
-fi
+    echo "  checker output: $checker_output"
+    echo -e "  instructions: ${GREEN}$instr_count${NC}"
 
-echo "  checker output: $checker_output"
-echo -e "  instructions: ${GREEN}$instr_count${NC}"
+    # Show score only for 100 and 500
+    if [[ $n -eq 100 || $n -eq 500 ]]; then
+        score=$(get_score $n $instr_count)
+        echo -e "  score: ${MAGENTA}$score${NC}"
+        echo "[${n}] $ARG" >> logs.txt
+    fi
 
-# Show score only for 100 and 500
-if [[ $n -eq 100 || $n -eq 500 ]]; then
-    score=$(get_score $n $instr_count)
-    echo -e "  score: ${MAGENTA}$score${NC}"
-fi
+    # Run Valgrind ONLY if checker fails OR output is empty (for error tests)
+    if [[ "$checker_output" != "OK" ]]; then
+        echo -e "\nRunning valgrind on failing case: ./push_swap $ARG"
+        echo "[Command] ./push_swap $ARG" >> valgrind.log
+        valgrind --leak-check=full --show-leak-kinds=all --error-exitcode=1 ./push_swap $ARG &>> valgrind.log
+    fi
 
-# Only fail if checker_output is not OK
-if [[ "$checker_output" == "OK" ]]; then
-    echo -e "  Result: ${GREEN}PASS${NC}"
-else
-    echo -e "  Result: ${RED}FAIL${NC}"
-    run_valgrind ./push_swap $ARG
-fi
+    # Report result
+    if [[ "$checker_output" == "OK" ]]; then
+        echo -e "  Result: ${GREEN}PASS${NC}"
+    else
+        echo -e "  Result: ${RED}FAIL${NC}"
+    fi
 done
-
 echo -e "\n=== Testing complete ==="
 echo -e "${YELLOW}Logs saved to logs.txt for 100 and 500 input cases.${NC}"
 echo -e "${YELLOW}Valgrind logs for failing cases saved to valgrind.log${NC}"
